@@ -79,8 +79,10 @@ class _MyHomePageState extends State<MyHomePage> {
         final json = jsonDecode(event);
         final newToken = json["data"]["token"];
 
-        print("got new token $newToken");
-        preferences.setString("token", newToken);
+        if (newToken != null) {
+          print("got new token $newToken");
+          preferences.setString("token", newToken);
+        }
       } catch (_) {}
     });
   }
