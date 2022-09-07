@@ -1,13 +1,21 @@
 import 'dart:convert';
+import 'dart:developer';
 import 'dart:io';
-import 'dart:math';
+import 'dart:math' hide log;
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:wakelock/wakelock.dart';
 
 late final SharedPreferences preferences;
+
+const applications = {
+  "youtube": "111299001912",
+  "spotify": "3201606009684",
+};
 
 class MyHttpOverrides extends HttpOverrides {
   @override
@@ -33,8 +41,11 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Flutter Demo',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
+      theme: ThemeData(primarySwatch: Colors.purple),
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
+        primarySwatch: Colors.purple,
+        dividerColor: Colors.purple,
       ),
       home: const MyHomePage(),
     );
@@ -57,8 +68,11 @@ class _MyHomePageState extends State<MyHomePage> {
   void initState() {
     super.initState();
 
+    Wakelock.enable();
+
     final name = base64Encode("dark-remote".codeUnits);
 
+    print("connecting...");
     socket = WebSocketChannel.connect(
       Uri(
         scheme: "wss",
@@ -103,59 +117,144 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       body: Column(
         children: [
-          ListView(
-            shrinkWrap: true,
+          Row(
             children: [
-              ListTile(
-                title: const Text("Back"),
-                onTap: () => _pressKey("KEY_RETURN"),
+              Expanded(
+                child: ListTile(
+                  title: const Text("YouTube", textAlign: TextAlign.center),
+                  onTap: () async {
+                    final res = await Dio().post(
+                      "http://192.168.0.95:8001/api/v2/applications/" +
+                          applications["youtube"]!,
+                    );
+
+                    inspect(res.data);
+                  },
+                ),
               ),
-              ListTile(
-                title: const Text("Home"),
-                onTap: () => _pressKey("KEY_HOME"),
+              Expanded(
+                child: ListTile(
+                  title: const Text("Spotify", textAlign: TextAlign.center),
+                  onTap: () async {
+                    final res = await Dio().post(
+                      "http://192.168.0.95:8001/api/v2/applications/" +
+                          applications["spotify"]!,
+                    );
+
+                    inspect(res.data);
+                  },
+                ),
               ),
-              ListTile(
-                title: const Text("Play / Pause"),
-                onTap: () => _pressKey("KEY_HDMI"),
+              Expanded(
+                child: ListTile(
+                  title: const Text("HDMI", textAlign: TextAlign.center),
+                  onTap: () => _pressKey("KEY_HDMI"),
+                ),
               ),
             ],
           ),
+          const Divider(),
           Expanded(
-            child: GestureDetector(
-              onPanStart: (_) => _dragDelta = Offset.zero,
-              onPanUpdate: (d) {
-                _dragDelta = _dragDelta! + d.delta;
+            child: Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onVerticalDragStart: (_) => _dragDelta = Offset.zero,
+                    onVerticalDragUpdate: (d) {
+                      _dragDelta = _dragDelta! + d.delta;
 
-                const threshold = 80.0;
+                      const threshold = 30.0;
 
-                if (_dragDelta!.distance > threshold) {
-                  HapticFeedback.selectionClick();
+                      if (_dragDelta!.distance > threshold) {
+                        final dir =
+                            (_dragDelta!.direction / pi * 2 + 0.5).floor();
+                        switch (dir) {
+                          case -1:
+                            _pressKey("KEY_VOLUP");
+                            _dragDelta = _dragDelta!.translate(0, threshold);
+                            break;
+                          case 1:
+                            _pressKey("KEY_VOLDOWN");
+                            _dragDelta = _dragDelta!.translate(0, -threshold);
+                            break;
+                        }
+                      }
+                    },
+                    onVerticalDragEnd: (_) => _dragDelta = null,
+                    onVerticalDragCancel: () => _dragDelta = null,
+                    onTap: () => _pressKey("KEY_MUTE"),
+                  ),
+                ),
+                const VerticalDivider(),
+                Expanded(
+                  flex: 3,
+                  child: GestureDetector(
+                    onPanStart: (_) => _dragDelta = Offset.zero,
+                    onPanUpdate: (d) {
+                      _dragDelta = _dragDelta! + d.delta;
 
-                  final dir = (_dragDelta!.direction / pi * 2 + 0.5).floor();
-                  switch (dir) {
-                    case 2:
-                    case -2:
-                      _pressKey("KEY_LEFT");
-                      _dragDelta = _dragDelta!.translate(threshold, 0);
-                      break;
-                    case -1:
-                      _pressKey("KEY_UP");
-                      _dragDelta = _dragDelta!.translate(0, threshold);
-                      break;
-                    case 0:
-                      _pressKey("KEY_RIGHT");
-                      _dragDelta = _dragDelta!.translate(-threshold, 0);
-                      break;
-                    case 1:
-                      _pressKey("KEY_DOWN");
-                      _dragDelta = _dragDelta!.translate(0, -threshold);
-                      break;
-                  }
-                }
-              },
-              onPanEnd: (_) => _dragDelta = null,
-              onPanCancel: () => _dragDelta = null,
-              onTap: () => _pressKey("KEY_ENTER"),
+                      const threshold = 60.0;
+
+                      if (_dragDelta!.distance > threshold) {
+                        final dir =
+                            (_dragDelta!.direction / pi * 2 + 0.5).floor();
+                        switch (dir) {
+                          case 2:
+                          case -2:
+                            _pressKey("KEY_LEFT");
+                            _dragDelta = _dragDelta!
+                                .translate(threshold, -_dragDelta!.dy);
+                            break;
+                          case -1:
+                            _pressKey("KEY_UP");
+                            _dragDelta = _dragDelta!
+                                .translate(-_dragDelta!.dx, threshold);
+                            break;
+                          case 0:
+                            _pressKey("KEY_RIGHT");
+                            _dragDelta = _dragDelta!
+                                .translate(-threshold, -_dragDelta!.dy);
+                            break;
+                          case 1:
+                            _pressKey("KEY_DOWN");
+                            _dragDelta = _dragDelta!
+                                .translate(-_dragDelta!.dx, -threshold);
+                            break;
+                        }
+                      }
+                    },
+                    onPanEnd: (_) => _dragDelta = null,
+                    onPanCancel: () => _dragDelta = null,
+                    onTap: () => _pressKey("KEY_ENTER"),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(),
+          SizedBox(
+            height: 120,
+            child: Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    child: const Center(child: Icon(Icons.arrow_back)),
+                    onTap: () => _pressKey("KEY_RETURN"),
+                  ),
+                ),
+                Expanded(
+                  child: InkWell(
+                    child: const Center(child: Icon(Icons.home_outlined)),
+                    onTap: () => _pressKey("KEY_HOME"),
+                  ),
+                ),
+                Expanded(
+                  child: InkWell(
+                    child: const Center(child: Icon(Icons.pause)),
+                    onTap: () => _pressKey("KEY_ENTER"),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -163,8 +262,10 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  void _pressKey(String key) {
+  void _pressKey(Object key) {
     print("pressing $key");
+
+    HapticFeedback.lightImpact();
 
     socket.sink.add(jsonEncode(
       {
